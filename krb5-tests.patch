@@ -1,0 +1,15 @@
+--- krb5-appl-1.0.2/tests/resolve/Makefile.in.orig	2009-07-20 19:21:24.000000000 +0200
++++ krb5-appl-1.0.2/tests/resolve/Makefile.in	2011-11-06 13:32:26.574182264 +0100
+@@ -20,9 +20,9 @@
+ 	$(CC_LINK) -o $@ fake-addrinfo-test.o $(MISSING_LIB) $(KRB5_BASE_LIBS) $(LIBS)
+ 
+ check:: resolve addrinfo-test fake-addrinfo-test
+-	$(VALGRIND) ./resolve
+-	$(VALGRIND) ./addrinfo-test -p telnet
+-	$(VALGRIND) ./fake-addrinfo-test -p telnet
++	if test -z "$(SKIP_NET_TESTS)"; then $(VALGRIND) ./resolve ep09.pld-linux.org ; fi
++	if test -z "$(SKIP_NET_TESTS)"; then $(VALGRIND) ./addrinfo-test -p telnet ; fi
++	if test -z "$(SKIP_NET_TESTS)"; then $(VALGRIND) ./fake-addrinfo-test -p telnet ; fi
+ 
+ install::
+ 

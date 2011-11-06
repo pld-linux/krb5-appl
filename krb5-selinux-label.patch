@@ -1,0 +1,493 @@
+SELinux bases access to files mainly on the domain of the requesting
+process and the context applied to the file.
+
+In many cases, applications needn't be SELinux aware to work properly,
+because SELinux can apply a default label to a file based on the label
+of the directory in which it's created.
+
+In the case of files such as /etc/krb5.keytab, however, this isn't
+sufficient, as /etc/krb5.keytab will almost always need given a label
+which differs from that of /etc/issue or /etc/resolv.conf.
+
+To give the file the correct label, we can either force a "restorecon"
+call to fix a file's label after it's created, or create the file with
+the right label, as we do here.  We lean on THREEPARAMOPEN and define a
+similar macro named WRITABLEFOPEN with which we replace several uses of
+fopen().
+
+diff -ur krb5-1.6.3/src/aclocal.m4 krb5-1.6.3/src/aclocal.m4
+--- krb5-1.6.3/src/aclocal.m4	2008-03-06 19:04:59.000000000 -0500
++++ krb5-1.6.3/src/aclocal.m4	2008-03-06 17:31:21.000000000 -0500
+@@ -102,6 +102,7 @@
+ dnl
+ KRB5_AC_PRAGMA_WEAK_REF
+ WITH_LDAP
++KRB5_WITH_SELINUX
+ KRB5_LIB_PARAMS
+ KRB5_AC_INITFINI
+ KRB5_AC_ENABLE_THREADS
+@@ -1902,3 +1903,50 @@
+ AC_SUBST(PAM_MAN)
+ AC_SUBST(NON_PAM_MAN)
+ ])dnl
++dnl
++dnl Use libselinux to set file contexts on newly-created files.
++dnl 
++AC_DEFUN(KRB5_WITH_SELINUX,[
++AC_ARG_WITH(selinux,[AC_HELP_STRING(--with-selinux,[compile with SELinux labeling support])],
++           withselinux="$withval",withselinux=auto)
++old_LIBS="$LIBS"
++if test "$withselinux" != no ; then
++       AC_MSG_RESULT([checking for libselinux...])
++       SELINUX_LIBS=
++       AC_CHECK_HEADERS(selinux/selinux.h)
++       if test "x$ac_cv_header_selinux_selinux_h" != xyes ; then
++               if test "$withselinux" = auto ; then
++                       AC_MSG_RESULT([Unable to locate selinux/selinux.h.])
++                       withselinux=no
++               else
++                       AC_MSG_ERROR([Unable to locate selinux/selinux.h.])
++               fi
++       fi
++
++       LIBS=
++       unset ac_cv_func_setfscreatecon
++       AC_CHECK_FUNCS(setfscreatecon)
++       if test "x$ac_cv_func_setfscreatecon" = xno ; then
++               AC_CHECK_LIB(selinux,setfscreatecon)
++               unset ac_cv_func_setfscreatecon
++               AC_CHECK_FUNCS(setfscreatecon)
++               if test "x$ac_cv_func_setfscreatecon" = xyes ; then
++                       SELINUX_LIBS="$LIBS"
++               else
++                       if test "$withselinux" = auto ; then
++                               AC_MSG_RESULT([Unable to locate libselinux.])
++                               withselinux=no
++                       else
++                               AC_MSG_ERROR([Unable to locate libselinux.])
++                       fi
++               fi
++       fi
++       if test "$withselinux" != no ; then
++               AC_MSG_RESULT([Using SELinux.])
++               AC_DEFINE(USE_SELINUX,1,[Define if Kerberos-aware tools should set SELinux file contexts when creating files.])
++               SELINUX_LIBS="$LIBS"
++       fi
++fi
++LIBS="$old_LIBS"
++AC_SUBST(SELINUX_LIBS)
++])dnl
+diff -ur krb5-1.6.3/src/appl/bsd/configure.in krb5-1.6.3/src/appl/bsd/configure.in
+--- krb5-1.6.3/src/appl/bsd/configure.in	2008-03-06 19:04:59.000000000 -0500
++++ krb5-1.6.3/src/appl/bsd/configure.in	2008-03-06 18:05:45.000000000 -0500
+@@ -25,6 +25,7 @@
+       LOGINLIBS="$LOGINLIBS -lodm -ls -lcfg" 
+       )))
+ KRB5_WITH_PAM
++KRB5_WITH_SELINUX
+ dnl
+ dnl Make our operating system-specific security checks and definitions for
+ dnl login.
+diff -ur krb5-1.6.3/src/appl/gssftp/configure.in krb5-1.6.3/src/appl/gssftp/configure.in
+--- krb5-1.6.3/src/appl/gssftp/configure.in	2008-03-06 19:04:59.000000000 -0500
++++ krb5-1.6.3/src/appl/gssftp/configure.in	2008-03-06 18:08:03.000000000 -0500
+@@ -18,6 +18,7 @@
+ AC_CHECK_FUNCS(getcwd getdtablesize getusershell seteuid setreuid setresuid strerror getenv)
+ AC_CHECK_LIB(crypt,crypt) dnl 
+ KRB5_WITH_PAM
++KRB5_WITH_SELINUX
+ KRB5_AC_LIBUTIL
+ dnl 
+ dnl copied from appl/bsd/configure.in
+diff -ur krb5-1.6.3/src/appl/telnet/configure.in krb5-1.6.3/src/appl/telnet/configure.in
+--- krb5-1.6.3/src/appl/telnet/configure.in	2006-03-27 23:35:02.000000000 -0500
++++ krb5-1.6.3/src/appl/telnet/configure.in	2008-03-06 18:08:49.000000000 -0500
+@@ -163,6 +163,7 @@
+ if test $krb5_cv_sys_setpgrp_two = yes; then
+   AC_DEFINE(SETPGRP_TWOARG,1,[Define if setpgrp takes two arguments])
+ fi
++KRB5_USE_SELINUX
+ dnl
+ KRB5_NEED_PROTO([#include <stdlib.h>],unsetenv,1)
+ dnl KRB5_NEED_PROTO([#include <stdlib.h>],setenv,1)
+diff -ur krb5-1.6.3/src/configure.in krb5-1.6.3/src/configure.in
+--- krb5-1.6.3/src/configure.in	2008-03-06 19:04:59.000000000 -0500
++++ krb5-1.6.3/src/configure.in	2008-03-06 17:39:53.000000000 -0500
+@@ -945,6 +945,8 @@
+ 
+ KRB5_WITH_PAM
+ 
++KRB5_WITH_SELINUX
++
+ AC_CONFIG_FILES(krb5-config, [chmod +x krb5-config])
+ 
+ mansysconfdir=$sysconfdir
+diff -ur krb5-1.6.3/src/include/autoconf.h.in krb5-1.6.3/src/include/autoconf.h.in
+--- krb5-1.6.3/src/include/autoconf.h.in	2007-10-21 23:35:17.000000000 -0400
++++ krb5-1.6.3/src/include/autoconf.h.in	2008-03-06 17:39:13.000000000 -0500
+@@ -358,6 +358,9 @@
+ /* Define to 1 if you have the `sched_yield' function. */
+ #undef HAVE_SCHED_YIELD
+ 
++/* Define to 1 if you have the <selinux/selinux.h> header file. */
++#undef HAVE_SELINUX_SELINUX_H
++
+ /* Define to 1 if you have the <semaphore.h> header file. */
+ #undef HAVE_SEMAPHORE_H
+ 
+@@ -370,6 +373,9 @@
+ /* Define to 1 if you have the `setegid' function. */
+ #undef HAVE_SETEGID
+ 
++/* Define to 1 if you have the `setfscreatecon' function. */
++#undef HAVE_SETFSCREATECON
++
+ /* Define to 1 if you have the `setenv' function. */
+ #undef HAVE_SETENV
+ 
+@@ -695,6 +701,10 @@
+ /* Define if the KDC should use a replay cache */
+ #undef USE_RCACHE
+ 
++/* Define if Kerberos-aware tools should set SELinux file contexts when
++   creating files. */
++#undef USE_SELINUX
++
+ /* Define if sigprocmask should be used */
+ #undef USE_SIGPROCMASK
+ 
+diff -ur krb5-1.6.3/src/include/k5-int.h krb5-1.6.3/src/include/k5-int.h
+--- krb5-1.6.3/src/include/k5-int.h	2007-10-04 16:17:48.000000000 -0400
++++ krb5-1.6.3/src/include/k5-int.h	2008-03-06 18:51:29.000000000 -0500
+@@ -128,6 +128,7 @@
+ typedef UINT64_TYPE krb5_ui_8;
+ typedef INT64_TYPE krb5_int64;
+ 
++#include "k5-label.h"
+ 
+ #define DEFAULT_PWD_STRING1 "Enter password"
+ #define DEFAULT_PWD_STRING2 "Re-enter password for verification"
+diff -ur krb5-1.6.3/src/include/krb5/krb5.hin krb5-1.6.3/src/include/krb5/krb5.hin
+--- krb5-1.6.3/src/include/krb5/krb5.hin	2007-09-17 23:36:09.000000000 -0400
++++ krb5-1.6.3/src/include/krb5/krb5.hin	2008-03-06 18:17:29.000000000 -0500
+@@ -91,6 +91,12 @@
+ #define THREEPARAMOPEN(x,y,z) open(x,y,z)
+ #endif
+ 
++#if KRB5_PRIVATE
++#ifndef WRITABLEFOPEN
++#define WRITABLEFOPEN(x,y) fopen(x,y)
++#endif
++#endif
++
+ #define KRB5_OLD_CRYPTO
+ 
+ #include <stdlib.h>
+--- krb5-1.6.3/src/util/support/selinux.c	2007-08-25 03:19:00.000000000 -0400
++++ krb5-1.6.3/src/util/support/selinux.c	2007-08-24 23:38:39.000000000 -0400
+@@ -0,0 +1,275 @@
++/*
++ * Copyright 2007,2008 Red Hat, Inc.  All Rights Reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ *
++ *  Redistributions of source code must retain the above copyright notice, this
++ *  list of conditions and the following disclaimer.
++ *
++ *  Redistributions in binary form must reproduce the above copyright notice,
++ *  this list of conditions and the following disclaimer in the documentation
++ *  and/or other materials provided with the distribution.
++ *
++ *  Neither the name of Red Hat, Inc. nor the names of its contributors may be
++ *  used to endorse or promote products derived from this software without
++ *  specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
++ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
++ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
++ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
++ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
++ * POSSIBILITY OF SUCH DAMAGE.
++ * 
++ * File-opening wrappers for creating correctly-labeled files.  So far, we can
++ * assume that this is Linux-specific, so we make many simplifying assumptions.
++ */
++
++#include "../../include/autoconf.h"
++
++#ifdef USE_SELINUX
++
++#include <k5-label.h>
++#include <k5-thread.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <limits.h>
++#include <pthread.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++#include <selinux/selinux.h>
++
++/* #define DEBUG 1 */
++
++/* Mutex used to serialize use of the process-global file creation context. */
++k5_mutex_t labeled_mutex = K5_MUTEX_PARTIAL_INITIALIZER;
++
++/* Make sure we finish initializing that mutex before attempting to use it. */
++k5_once_t labeled_once = K5_ONCE_INIT;
++static void
++label_mutex_init(void)
++{
++	k5_mutex_finish_init(&labeled_mutex);
++}
++
++static security_context_t
++push_fscreatecon(const char *pathname, mode_t mode)
++{
++	security_context_t previous, next;
++	const char *fullpath;
++
++	previous = NULL;
++	if (is_selinux_enabled()) {
++		if (getfscreatecon(&previous) == 0) {
++			char *genpath;
++			genpath = NULL;
++			if (pathname[0] != '/') {
++				char *wd;
++				size_t len;
++				len = 0;
++				wd = getcwd(NULL, len);
++				if (wd == NULL) {
++					if (previous != NULL) {
++						freecon(previous);
++					}
++					return NULL;
++				}
++				len = strlen(wd) + 1 + strlen(pathname) + 1;
++				genpath = malloc(len);
++				if (genpath == NULL) {
++					free(wd);
++					if (previous != NULL) {
++						freecon(previous);
++					}
++					return NULL;
++				}
++				sprintf(genpath, "%s/%s", wd, pathname);
++				free(wd);
++				fullpath = genpath;
++			} else {
++				fullpath = pathname;
++			}
++			next = NULL;
++#ifdef DEBUG
++			if (isatty(fileno(stderr))) {
++				fprintf(stderr, "Looking up context for "
++					"\"%s\"(%05o).\n", fullpath, mode);
++			}
++#endif
++			if (matchpathcon(fullpath, mode, &next) != 0) {
++				free(genpath);
++				if (previous != NULL) {
++					freecon(previous);
++				}
++				return NULL;
++			}
++			free(genpath);
++#ifdef DEBUG
++			if (isatty(fileno(stderr))) {
++				fprintf(stderr, "Setting file creation context "
++					"to \"%s\".\n", next);
++			}
++#endif
++			if (setfscreatecon(next) != 0) {
++				freecon(next);
++				if (previous != NULL) {
++					freecon(previous);
++				}
++				return NULL;
++			}
++			freecon(next);
++#ifdef DEBUG
++		} else {
++			if (isatty(fileno(stderr))) {
++				fprintf(stderr, "Unable to determine "
++					"current context.\n");
++			}
++#endif
++		}
++	}
++	return previous;
++}
++
++static void
++pop_fscreatecon(security_context_t previous)
++{
++	if (is_selinux_enabled()) {
++#ifdef DEBUG
++		if (isatty(fileno(stderr))) {
++			if (previous != NULL) {
++				fprintf(stderr, "Resetting file creation "
++					"context to \"%s\".\n", previous);
++			} else {
++				fprintf(stderr, "Resetting file creation "
++					"context to default.\n");
++			}
++		}
++#endif
++		setfscreatecon(previous);
++		if (previous != NULL) {
++			freecon(previous);
++		}
++	}
++}
++
++FILE *
++krb5int_labeled_fopen(const char *path, const char *mode)
++{
++	FILE *fp;
++	int errno_save;
++	security_context_t ctx;
++
++	if (strcmp(mode, "r") == 0) {
++		return fopen(path, mode);
++	}
++
++	k5_once(&labeled_once, label_mutex_init);
++	k5_mutex_lock(&labeled_mutex);
++	ctx = push_fscreatecon(path, 0);
++	fp = fopen(path, mode);
++	errno_save = errno;
++	pop_fscreatecon(ctx);
++	k5_mutex_unlock(&labeled_mutex);
++
++	errno = errno_save;
++	return fp;
++}
++
++int
++krb5int_labeled_creat(const char *path, mode_t mode)
++{
++	int fd;
++	int errno_save;
++	security_context_t ctx;
++
++	k5_once(&labeled_once, label_mutex_init);
++	k5_mutex_lock(&labeled_mutex);
++	ctx = push_fscreatecon(path, 0);
++	fd = creat(path, mode);
++	errno_save = errno;
++	pop_fscreatecon(ctx);
++	k5_mutex_unlock(&labeled_mutex);
++
++	errno = errno_save;
++	return fd;
++}
++
++int
++krb5int_labeled_mknod(const char *path, mode_t mode, dev_t dev)
++{
++	int ret;
++	int errno_save;
++	security_context_t ctx;
++
++	k5_once(&labeled_once, label_mutex_init);
++	k5_mutex_lock(&labeled_mutex);
++	ctx = push_fscreatecon(path, mode);
++	ret = mknod(path, mode, dev);
++	errno_save = errno;
++	pop_fscreatecon(ctx);
++	k5_mutex_unlock(&labeled_mutex);
++
++	errno = errno_save;
++	return ret;
++}
++
++int
++krb5int_labeled_mkdir(const char *path, mode_t mode)
++{
++	int ret;
++	int errno_save;
++	security_context_t ctx;
++
++	k5_once(&labeled_once, label_mutex_init);
++	k5_mutex_lock(&labeled_mutex);
++	ctx = push_fscreatecon(path, S_IFDIR);
++	ret = mkdir(path, mode);
++	errno_save = errno;
++	pop_fscreatecon(ctx);
++	k5_mutex_unlock(&labeled_mutex);
++
++	errno = errno_save;
++	return ret;
++}
++
++int
++krb5int_labeled_open(const char *path, int flags, ...)
++{
++	int fd;
++	int errno_save;
++	security_context_t ctx;
++	mode_t mode;
++	va_list ap;
++
++	if ((flags & O_CREAT) == 0) {
++		return open(path, flags);
++	}
++
++	k5_once(&labeled_once, label_mutex_init);
++	k5_mutex_lock(&labeled_mutex);
++	ctx = push_fscreatecon(path, 0);
++
++	va_start(ap, flags);
++	mode = va_arg(ap, mode_t);
++	fd = open(path, flags, mode);
++	va_end(ap);
++
++	errno_save = errno;
++
++	pop_fscreatecon(ctx);
++	k5_mutex_unlock(&labeled_mutex);
++	return fd;
++}
++
++#endif
+--- krb5-1.6.3/src/include/k5-label.h	2007-08-25 03:19:00.000000000 -0400
++++ krb5-1.6.3/src/include/k5-label.h	2007-08-25 03:00:02.000000000 -0400
+@@ -0,0 +1,27 @@
++#ifndef _KRB5_LABEL_H
++#define _KRB5_LABEL_H
++
++#ifdef THREEPARAMOPEN
++#undef THREEPARAMOPEN
++#endif
++
++/* Wrapper functions which help us create files and directories with the right
++ * context labels. */
++#ifdef USE_SELINUX
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <fcntl.h>
++#include <stdio.h>
++#include <unistd.h>
++FILE *krb5int_labeled_fopen(const char *path, const char *mode);
++int krb5int_labeled_creat(const char *path, mode_t mode);
++int krb5int_labeled_open(const char *path, int flags, ...);
++int krb5int_labeled_mkdir(const char *path, mode_t mode);
++int krb5int_labeled_mknod(const char *path, mode_t mode, dev_t device);
++#define THREEPARAMOPEN(x,y,z) krb5int_labeled_open(x,y,z)
++#define WRITABLEFOPEN(x,y) krb5int_labeled_fopen(x,y)
++#else
++#define WRITABLEFOPEN(x,y) fopen(x,y)
++#define THREEPARAMOPEN(x,y,z) open(x,y,z)
++#endif
++#endif

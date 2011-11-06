@@ -1,0 +1,22 @@
+--- krb5-appl-1.0.2/bsd/klogind.M
++++ krb5-appl-1.0.2/bsd/klogind.M
+@@ -27,7 +27,7 @@
+ the port indicated in /etc/inetd.conf.  A typical /etc/inetd.conf
+ configuration line for \fIklogind\fP might be:
+ 
+-klogin stream tcp nowait root /usr/local/sbin/klogind klogind \-e5c
++klogin stream tcp nowait root /usr/sbin/klogind klogind \-e5c
+ 
+ When a service request is received, the following protocol is initiated:
+ 
+--- krb5-appl-1.0.2/bsd/kshd.M
++++ krb5-appl-1.0.2/bsd/kshd.M
+@@ -30,7 +30,7 @@
+ on the port indicated in /etc/inetd.conf.  A typical /etc/inetd.conf
+ configuration line for \fIkrshd\fP might be:
+ 
+-kshell	stream	tcp	nowait	root	/usr/local/sbin/kshd	kshd -5c
++kshell	stream	tcp	nowait	root	/usr/sbin/kshd		kshd -5c
+ 
+ When a service request is received, the following protocol is initiated:
+ 
