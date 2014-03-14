@@ -3,16 +3,16 @@
 %bcond_with	selinux		# build with selinux support
 %bcond_without	tests		# don't perform make check
 #
-%define	krb5_ver	1.9.1
+%define	krb5_ver	1.10
 Summary:	Kerberos V5 Applications
 Summary(pl.UTF-8):	Aplikacje systemu Kerberos V5
 Name:		krb5-appl
-Version:	1.0.2
+Version:	1.0.3
 Release:	0.1
 License:	MIT
 Group:		Networking
 Source0:	http://web.mit.edu/kerberos/dist/krb5-appl/1.0/%{name}-%{version}-signed.tar
-# Source0-md5:	60b2579e65c58c8677d492a50a1398e3
+# Source0-md5:	802ae5dbd783689f50ea85ccb9693cac
 Source1:	klogind.inetd
 Source2:	kftpd.inetd
 Source3:	ktelnetd.inetd
