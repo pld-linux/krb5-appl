@@ -269,14 +269,10 @@ mv %{name}-%{version}/* .
 %patch17 -p1
 
 %build
-# Get LFS support on systems that need it which aren't already 64-bit.
-%ifarch %{ix86} s390 ppc sparc
-CFLAGS="%{rpmcflags} -D_FILE_OFFSET_BITS=64 -I%{_includedir}/ncurses"
-CPPFLAGS="-D_FILE_OFFSET_BITS=64 -I%{_includedir}/ncurses"
-%else
-CFLAGS="%{rpmcflags} -I%{_includedir}/ncurses"
-CPPFLAGS="-I%{_includedir}/ncurses"
-%endif
+# Get LFS support on systems that need additional flags.
+LFS_CFLAGS="$(getconf LFS_CFLAGS)"
+CFLAGS="%{rpmcflags} $LFS_CFLAGS -I%{_includedir}/ncurses"
+CPPFLAGS="$LFS_CFLAGS -I%{_includedir}/ncurses"
 
 %{__autoconf}
 %{__autoheader}
