@@ -81,6 +81,7 @@ osobno.
 Summary:	Kerberized version of login program
 Summary(pl.UTF-8):	Skerberyzowana wersja programu login
 Group:		Networking
+Obsoletes:	heimdal-login
 Conflicts:	krb5-common < 1.8
 
 %description -n krb5-login
@@ -139,7 +140,7 @@ Group:		Networking/Daemons
 Requires:	krb5-common >= %{krb5_ver}
 Requires:	rc-inetd >= 0.8.1
 Obsoletes:	rshd
-Conflicts:	heimdal-rshd
+Obsoletes:	heimdal-rshd
 
 %description -n krb5-kshd
 The kshd package contains kerberized remote shell server which
@@ -196,7 +197,7 @@ Group:		Networking/Daemons
 Requires:	krb5-common >= %{krb5_ver}
 Requires:	rc-inetd >= 0.8.1
 Obsoletes:	ftpd
-Conflicts:	heimdal-ftpd
+Obsoletes:	heimdal-ftpd
 
 %description -n krb5-ftpd
 FTP is the file transfer protocol, which is a widely used Internet
